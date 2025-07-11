@@ -1,0 +1,163 @@
+//main.py
+import os
+from crewai import Agent, Task, Crew, LLM
+from crewai.project import CrewBase, agent, crew, task
+from pydantic import BaseModel, Field
+from langchain_ollama import ChatOllama
+
+# Use Ollama LLM
+llm = LLM(
+    model="ollama/llama3.1:8b",
+    base_url="http://localhost:11434",
+    temperature=0.7
+)
+
+# Define the input schema
+class ResearchSchema(BaseModel):
+    topic: str = Field(description="The topic to be researched.")
+
+@CrewBase
+class ResearchReportCrew:
+
+    @agent
+    def researcher(self) -> Agent:
+        return Agent(
+            config=self.agents_config["researcher"],
+            llm=llm,
+            verbose=True
+        )
+
+    @agent
+    def writer(self) -> Agent:
+        return Agent(
+            config=self.agents_config["writer"],
+            llm=llm,
+            verbose=True
+        )
+
+    @agent
+    def polisher(self) -> Agent:
+        return Agent(
+            config=self.agents_config["polisher"],
+            llm=llm,
+            verbose=True
+        )
+
+    @task
+    def gather_information(self) -> Task:
+        return Task(
+            config=self.tasks_config["gather_information"],
+            input_schema=ResearchSchema,
+            agent=self.researcher(),
+            expected_output="Bullet-point structured research on the given topic, covering multiple aspects like definition, applications, and future scope."
+        )
+
+
+    @task
+    def write_report(self) -> Task:
+        return Task(
+            config=self.tasks_config["write_report"],
+            input_schema=ResearchSchema,
+            agent=self.writer(),
+            expected_output="A structured, detailed report formatted in markdown, broken into multiple sections to handle token limits."
+        )
+
+
+    @task
+    def polish_report(self) -> Task:
+        return Task(
+            config=self.tasks_config["polish_report"],
+            input_schema=ResearchSchema,
+            agent=self.polisher(),
+            output_file="final_report.txt",
+            depends_on=[self.write_report()],
+             expected_output="Polished final version of the research report, improved for clarity and structure."
+
+        )
+
+    @crew
+    def crew(self) -> Crew:
+        return Crew(
+            agents=self.agents,
+            tasks=self.tasks,
+            verbose=True
+        )
+
+
+# Change topic here
+inputs = {
+    "topic": "Artificial Intelligence in Healthcare"
+}
+
+result = ResearchReportCrew().crew().kickoff(inputs=inputs)
+
+print("\n\n✅ Final Report Generated:")
+print(result)
+
+
+
+//config/agents.yaml
+researcher:
+  role: Expert Research Analyst
+  goal: Collect deep, factual and structured information from diverse fields
+  backstory: >
+    A seasoned researcher who has worked on thousands of papers and journal studies. Known for accuracy and efficiency.
+  description: >
+    An expert at gathering knowledge and breaking down complex topics into digestible chunks.
+
+writer:
+  role: Technical Content Writer
+  goal: Convert raw research into structured, well-written documents
+  backstory: >
+    A skilled content creator with experience in transforming research into clear and engaging reports.
+  description: >
+    Takes structured notes and research, then writes a multi-part report using clean formatting and natural flow.
+
+polisher:
+  role: Senior Editor & Formatter
+  goal: Refine and polish content into a publish-ready report
+  backstory: >
+    A perfectionist editor who enhances grammar, structure, tone, and clarity of any written piece.
+  description: >
+    Reviews, edits, and finalizes documents to ensure they are error-free, well-structured, and professional.
+
+
+
+
+//config/tasks.yaml
+
+gather_information:
+  name: Topic Research Phase
+  description: >
+    Research the topic '{{topic}}' in detail. Structure findings under multiple bullet points and headings.
+  goal: >
+    Provide comprehensive and categorized notes about the topic. Cover all critical aspects: history, usage, issues, and future.
+  output_format: |
+    - Introduction
+    - Key Concepts
+    - Subtopics with summaries
+    - Statistics or references if needed
+    - Summary Notes
+
+write_report:
+  name: Report Drafting Phase
+  description: >
+    Using the research notes on '{{topic}}', write a detailed, structured report in 2-3 sections to fit token limits.
+  goal: >
+    Convert collected research into a multi-part structured report. Ensure headings and smooth transitions.
+  output_format: |
+    - Title
+    - Section 1: Overview and Definitions
+    - Section 2: In-depth Analysis or Case Study
+    - Section 3: Future Scope or Conclusion
+
+polish_report:
+  name: Final Editing Phase
+  description: >
+    Refine and enhance the full draft of the '{{topic}}' report. Fix grammar, structure, and polish the tone.
+  goal: >
+    Produce a professional, ready-to-publish research report with consistent tone, formatting, and logical flow.
+  output_format: |
+    - Formatted Title
+    - Edited Full Report with improved structure
+    - Conclusion with bullet summary points
