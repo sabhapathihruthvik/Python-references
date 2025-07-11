@@ -1,0 +1,103 @@
+import os
+from crewai import Agent, Task, Crew, LLM
+from crewai.project import CrewBase, agent, crew, task
+from pydantic import BaseModel, Field
+from langchain_ollama import ChatOllama
+
+# LLM Setup
+llm = LLM(
+    model="ollama/llama3.1:8b",
+    base_url="http://localhost:11434",
+    temperature=0.7
+)
+
+# Input Schema
+class BiologySchema(BaseModel):
+    topic: str = Field(description="The biology-related topic to research.")
+
+@CrewBase
+class BiologyResearchCrew:
+
+    @agent
+    def biology_agent(self) -> Agent:
+        return Agent(
+            role="Biology Researcher",
+            description="An expert in biology, physiology, and anatomy. Produces detailed scientific reports.",
+            config=self.agents_config['biology_agent'],  # YAML-linked
+            llm=llm,
+            verbose=True,
+            allow_delegation=False
+        )
+
+    @task
+    def research_task(self) -> Task:
+        return Task(
+            description="Write a detailed report on the biology topic '{{topic}}'. Cover all essential information.",
+            config=self.tasks_config['biology_task'],  # YAML-linked
+            expected_output="A well-organized biology report saved to a file.",
+            agent=self.biology_agent(),
+            input_schema=BiologySchema,
+            output_file="biology_report.txt"
+        )
+
+    @crew
+    def crew(self) -> Crew:
+        return Crew(
+            agents=self.agents,
+            tasks=self.tasks,
+            verbose=True,
+            allow_delegation=False
+        )
+
+# Topic input
+inputs = {
+    "topic": "Human Nervous System"  # 👈 You can change this topic
+}
+
+# Kickoff the Crew
+result = BiologyResearchCrew().crew().kickoff(inputs=inputs)
+
+print("Biology Report generated:")
+print(result)
+
+
+
+
+
+
+
+
+
+
+
+
+
+---config/agents.yaml
+biology_agent:
+  role: Biology Researcher
+  description: |
+    An expert in human biology, physiology, and anatomy. Capable of explaining complex biological topics clearly and thoroughly.
+  goal: |
+    To write a complete and detailed biology report based on a given topic.
+  backstory: |
+    With years of experience in academic and applied biology research, this agent excels at creating thorough and accurate summaries on biological topics.
+---config/tasks.yaml
+
+
+biology_task:
+  name: Biology Report Task
+  description: |
+    Write a detailed, structured, and informative report on the topic '{{topic}}' which is related to biology or physiology.
+  goal: |
+    To educate the reader on all major aspects of the topic by writing a well-organized and accurate report.
+  backstory: |
+    This task is designed to help compile knowledge from biological domains into a concise report useful for students, teachers, or professionals.
+  agent: biology_agent
+  input:
+    topic: "{{topic}}"
+  output_format: |
+    - Clear introduction to the topic
+    - Scientific explanation with subheadings
+    - Key functions and structures
+    - Relevant processes or mechanisms
+    - Summary or conclusion
