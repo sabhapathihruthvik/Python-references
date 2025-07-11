@@ -1,0 +1,158 @@
+import os
+from crewai import Agent, Task, Crew, LLM
+from crewai.project import CrewBase, agent, crew, task
+from pydantic import BaseModel, Field
+from langchain_ollama import ChatOllama
+
+# Use Ollama
+llm = LLM(
+    model="ollama/llama3.1:8b",
+    base_url="http://localhost:11434",
+    temperature=0.7
+)
+
+# Input Schema
+class ResearchSchema(BaseModel):
+    topic: str = Field(description="The topic to be deeply researched.")
+
+@CrewBase
+class ResearchReportCrew:
+
+    @agent
+    def researcher_one(self) -> Agent:
+        return Agent(
+            config=self.agents_config["researcher_one"],
+            llm=llm,
+            verbose=True
+        )
+
+    @agent
+    def researcher_two(self) -> Agent:
+        return Agent(
+            config=self.agents_config["researcher_two"],
+            llm=llm,
+            verbose=True
+        )
+
+    @agent
+    def researcher_three(self) -> Agent:
+        return Agent(
+            config=self.agents_config["researcher_three"],
+            llm=llm,
+            verbose=True
+        )
+
+    @task
+    def part_one(self) -> Task:
+        return Task(
+            config=self.tasks_config["part_one"],
+            input_schema=ResearchSchema,
+            agent=self.researcher_one(),
+            expected_output="First section of a deep research report on the given topic."
+        )
+
+    @task
+    def part_two(self) -> Task:
+        return Task(
+            config=self.tasks_config["part_two"],
+            input_schema=ResearchSchema,
+            agent=self.researcher_two(),
+            depends_on=[self.part_one()],
+            expected_output="Second section expanding on new insights not covered earlier."
+        )
+
+    @task
+    def part_three(self) -> Task:
+        return Task(
+            config=self.tasks_config["part_three"],
+            input_schema=ResearchSchema,
+            agent=self.researcher_three(),
+            depends_on=[self.part_two()],
+            output_file="final_research_report.txt",
+            expected_output="Final extended section adding advanced insights and wrapping up the research."
+        )
+
+    @crew
+    def crew(self) -> Crew:
+        return Crew(
+            agents=self.agents,
+            tasks=self.tasks,
+            verbose=True
+        )
+
+# You can modify this input topic
+inputs = {
+    "topic": "Artificial Intelligence in Military Strategy"
+}
+
+result = ResearchReportCrew().crew().kickoff(inputs=inputs)
+
+print("\n\n✅ Final Report Generated:")
+print(result)
+
+
+
+
+//config/agents.yaml
+researcher_one:
+  role: Initial Research Agent
+  goal: Provide the foundation of the research topic with broad and accurate info
+  backstory: >
+    A highly trained research agent known for establishing solid groundwork in technical topics.
+  description: >
+    Explains and covers foundational aspects, definitions, and introductory info.
+
+researcher_two:
+  role: Deep Diver Research Agent
+  goal: Explore secondary layers, implications, and case studies for the topic
+  backstory: >
+    An academic-level agent who excels in expanding on established knowledge and data.
+  description: >
+    Dives deeper into areas not covered by the first researcher, expanding knowledge horizon.
+
+researcher_three:
+  role: Advanced Insight Agent
+  goal: Provide forward-looking analysis, futuristic predictions, and final wrap-up
+  backstory: >
+    A visionary researcher who adds cutting-edge insight and futuristic outlook on the topic.
+  description: >
+    Finalizes the report by including advanced analysis, related technologies, and conclusion.
+
+
+//config/tasks.yaml
+part_one:
+  name: Foundation Research
+  description: >
+    Write the first part of the report on '{{topic}}'. Include definitions, history, and technical background.
+  goal: >
+    Provide an informative and detailed foundation of the topic.
+  output_format: |
+    - Introduction
+    - History
+    - Basic Concepts
+    - Terminology Explained
+    - Technologies involved
+
+part_two:
+  name: Deep Dive Research
+  description: >
+    Continue the report on '{{topic}}' by exploring detailed case studies, comparisons, and core challenges.
+  goal: >
+    Dive into advanced layers of the topic not covered in part one.
+  output_format: |
+    - Real-world Applications
+    - Case Studies
+    - Challenges & Risks
+    - Comparative Analysis
+
+part_three:
+  name: Future Outlook & Wrap-up
+  description: >
+    Wrap up the research on '{{topic}}' with future predictions, trends, and summary points.
+  goal: >
+    Provide futuristic insights and close the report with comprehensive summaries.
+  output_format: |
+    - Future Scope
+    - Trends
+    - Ethical & Social Implications
+    - Summary Points
