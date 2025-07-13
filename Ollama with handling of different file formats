@@ -1,0 +1,129 @@
+# streamlit_app.py
+import streamlit as st
+from langchain.llms import Ollama
+import json
+import re
+import csv
+import io
+import os
+from xml.etree import ElementTree as ET
+
+# ---------- Initialize LLM ----------
+ollama = Ollama(base_url="http://localhost:11434", model="llama3.1:8b")
+
+# ---------- Utility Functions ----------
+def parse_code_blocks(output):
+    """
+    Extract code blocks of any language from markdown using regex.
+    Returns a list of tuples: (language, code)
+    """
+    code_blocks = re.findall(r"```(\w+)?\s*([\s\S]*?)\s*```", output)
+    return [(lang.strip(), code.strip()) for lang, code in code_blocks]
+
+def infer_data_format(output):
+    """
+    Attempts to infer and parse structured formats: JSON, CSV, XML, Markdown, or Text.
+    Returns (processed_data, inferred_type)
+    """
+    try:
+        # JSON
+        json_match = re.search(r"```json\s*(.*?)\s*```", output, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group(1)), "json"
+        return json.loads(output), "json"
+    except:
+        pass
+
+    try:
+        # CSV
+        csv_match = re.search(r"```csv\s*(.*?)\s*```", output, re.DOTALL)
+        if csv_match:
+            csv_data = list(csv.reader(io.StringIO(csv_match.group(1).strip())))
+            return csv_data, "csv"
+    except:
+        pass
+
+    try:
+        # XML
+        xml_match = re.search(r"```xml\s*(.*?)\s*```", output, re.DOTALL)
+        if xml_match:
+            return ET.fromstring(xml_match.group(1)), "xml"
+    except:
+        pass
+
+    if output.strip().startswith(("#", "*", "-")):
+        return output, "markdown"
+
+    return output, "text"
+
+def download_button(data, filename, mime="text/plain"):
+    """
+    Creates a Streamlit download button for given data and filename.
+    """
+    if isinstance(data, (dict, list)):
+        data_str = json.dumps(data, indent=2)
+    elif isinstance(data, ET.Element):
+        data_str = ET.tostring(data, encoding='unicode')
+    else:
+        data_str = str(data)
+    st.download_button("⬇️ Download", data_str, file_name=filename, mime=mime)
+
+def display_output(output, inferred_type, code_blocks):
+    """
+    Displays the structured content and code blocks appropriately in Streamlit.
+    """
+    st.subheader("📤 Processed Output")
+
+    if inferred_type == "json":
+        st.json(output)
+        download_button(output, "output.json", "application/json")
+    elif inferred_type == "csv":
+        st.table(output)
+        download_button(output, "output.csv", "text/csv")
+    elif inferred_type == "xml":
+        st.text(ET.tostring(output, encoding='unicode'))
+        download_button(output, "output.xml", "application/xml")
+    elif inferred_type == "markdown":
+        st.markdown(output)
+        download_button(output, "output.md", "text/markdown")
+    else:
+        st.text(output)
+        download_button(output, "output.txt")
+
+    if code_blocks:
+        st.subheader("💻 Code Blocks Found")
+        for i, (lang, code) in enumerate(code_blocks, 1):
+            st.code(code, language=lang)
+            download_button(code, f"code_block_{i}.{lang if lang else 'txt'}")
+
+# ---------- Main Streamlit App ----------
+def main():
+    st.set_page_config("Ollama LLM Code + Data Parser", layout="wide")
+    st.title("🧠 Ollama LLM Response Handler")
+
+    prompt = st.text_area("Enter your prompt for the local LLM:", height=200)
+    preferred_format = st.selectbox("Preferred Format", ["auto", "json", "csv", "xml", "markdown", "text"])
+
+    if st.button("Submit"):
+        with st.spinner("Sending prompt to Ollama and processing..."):
+            # Format prompt
+            full_prompt = prompt
+            if preferred_format != "auto":
+                format_instructions = {
+                    "json": "Output JSON inside ```json```.",
+                    "csv": "Output CSV inside ```csv```.",
+                    "xml": "Output XML inside ```xml```.",
+                    "markdown": "Use proper markdown syntax.",
+                    "text": "Output plain text only."
+                }
+                full_prompt += f"\n\n{format_instructions.get(preferred_format, '')}"
+
+            raw_output = ollama(full_prompt)
+            code_blocks = parse_code_blocks(raw_output)
+            parsed_data, inferred_type = infer_data_format(raw_output)
+
+            display_output(parsed_data, inferred_type, code_blocks)
+
+# ---------- Run ----------
+if __name__ == "__main__":
+    main()
